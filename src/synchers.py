@@ -16,7 +16,7 @@ _date = '2009-05-18:11:51:43'
 #            -Initial release
 ###############################################################################################
 
-# imports
+# Imports
 import logging
 import sys
 import doctest
@@ -26,17 +26,21 @@ import subprocess
 import optparse
 import inspect
 
-import shellutils
-
 # User-libs imports
 LIB_PATH = 'lib'
-sys.path.append(LIB_PATH)
-print sys.path
+#sys.path.append(LIB_PATH)
+for file in LIB_PATH:
+    sys.path.insert(0, file)
+#print sys.path
+
+import shellutils
 
 # Parameters n' Constants
 APP_PATH = os.getcwd() + os.path.sep + '.' + _name
 LOG_PATH = APP_PATH + os.path.sep + 'logs'
 LOG_FILENAME = LOG_PATH + os.path.sep + _name + '_' + time.strftime("%Y%m%d_%H%M%S") + '.log'
+
+FREE_SPACE_PERCENTAGE_LIMIT = 20
 
 # Global variables
 global now
@@ -497,60 +501,111 @@ def syncAndroid():
 #    stuff()              #DEBUG: ; read
 #TODO Sincronize here the buffers
 
-
-# Main function
 def main():
     '''This is the main procedure
  
-    --Description--
- 
-    --Test--
-    >>> print main()
+    This procedure makes the following actions:
+     * Syncs the queues for the current system
  
     '''
    
+    currentSystem = shellutils.getSystemName()
+    defaultSyncLocation = defaultLocation()
+    mySyncLocation = 
+
+    #Sync queues
+    for system in shellutils.ls(mySyncLocation):
+        systemName = shellutils.basename(system)
+        if systemName != currentSystem:
+            #Copy this system stuff to its 
+            if isDriveConnected(systemName):
+                 
+
+            #Copy all outgoing stuff to the default location
+            else:
+                for subdirectory in shellutils.ls(system):
+                    #If there is enough space to paste files
+                    if defaultSyncLocation.simulateLeftSpaceInPercentageWithAddition(shellutils.du(subdirectory)) > FREE_SPACE_PERCENTAGE_LIMIT:
+                        #Move all the stuff
+                        shellutils.mv(subdirectory, defaultSyncLocation.getPath() + os.path.sep + systemName)
+                        #Recreate all the default subdirectories
+                        shellutils.mkdir(subdirectory)
+                        #Notify info
+
+                    else:
+                        #Notify error
+
+    for system in shellutils.ls(defaultSyncLocation.getPath()):
+        systemName = shellutils.basename(system)
+        #Copy all ingoing stuff from the default location
+        if systemName == currentSystem:
+            for subdirectory in shellutils.ls(system):
+                #If there is enough space to paste files
+                if shellutils.du(subdirectory) < shellutils.df(mySyncLocation):
+                    #Move all the stuff
+                    shellutils.mv(subdirectory, mySyncLocation + os.path.sep + systemName)
+                    #Recreate all the default subdirectories
+                    shellutils.mkdir(subdirectory)
+                    #Notify info
+                else:
+                    #Notify error
+  
+    #Sync device queues
+    for system in shellutils.ls(defaultSyncLocation.getPath()):
+        #
+#TODO:
+# metodos para shellutils
+#  du, basename, dirname, ls tiene que devolver paths absolutos, df (ruta) devuelve el numero de bytes que quedan en el disco donde reside ruta
+#  ojo que mv tiene que mergear si hay nombres de directorio iguales en origen y destino
+# metodos para defaultLocation
+#  getPath, simulateLeftSpaceInPercentageWithAddition
+
     #Get the current system where im running on
-    if shellutils.getSystemName() == DESKTOP_NAME_C: #Florido or something seemfull
-	   #Resolve specific data
-	   if isDriveConnected(PSP_NAME_C):
-	      syncDesktopPsp()
-		  
-	   elif isDriveConnected(MOBILE_NAME_C):
-	      syncDesktopMobile()
-		  
-	   elif isDriveConnected(CAMERA_NAME_C):
-	      syncDesktopCamera()
-		  
-       syncDesktopQueues()
-
-    elif shellutils.getSystemName() == NETTOP_NAME_C: #Mendigo or something like that
-        syncNettopQueues()
-
-    elif shellutils.getSystemName() == MOBILE_NAME_C:
-        syncMobileQueues()
-
-    else:
-        logging.error('System not recognized, named ' + shellutils.getSystemName())
+    #if shellutils.getSystemName() == DESKTOP_NAME_C: #Florido or something seemly
+	#    #Resolve specific data
+	#    if isDriveConnected(PSP_NAME_C):
+	#        syncDesktopPsp()
+	#
+	#    elif isDriveConnected(MOBILE_NAME_C):
+	#        syncDesktopMobile()
+	#  
+	#    elif isDriveConnected(CAMERA_NAME_C):
+	#        syncDesktopCamera()
+	#  
+    #    syncDesktopQueues()
+   #
+    #elif shellutils.getSystemName() == NETTOP_NAME_C: #Mendigo or something like that
+    #    syncNettopQueues()
+   #
+    #elif shellutils.getSystemName() == MOBILE_NAME_C:
+    #    syncMobileQueues()
+    #
+    #else:
+    #    logging.error('System not recognized, named ' + shellutils.getSystemName())
 
 
 # Entry point
 if __name__ == '__main__':
-    #doctest.testmod()   # automaticly run tests
     #checkInput()
-    createWorkDir()
-    openLog()
+    #createWorkDir()
+    #openLog()
     main()
-    closeLog()
+    #closeLog()
 
+#OJO QUE SE PUEDE HACER IMPORT CON ZIPIMPORT DE UN MODULO QUE SE TENGA EN ZIP CREADO CON DISTUTILS
+#http://docs.python.org/library/zipimport.html
+#http://docs.python.org/distutils/introduction.html
+
+#DOXYGEN para generar documentacion para cualquier lenguaje
 	
-#Requisitos para este software
+#Requisitos para este software_
 # Tiene que sincronizar las queues de los dispositivos
 #  Debe sincronizarlas teniendo en cuenta contenidos
-#  Debe sincronizarlas a traves del 80% del espacio libre del dropbox o directamente si estan enchufados directamente
-#  Debe poder fraccionar las sincronizaciones (al llegar al tope de espacio llenable mete un archivo de finished)
-# Tiene que poder hacer el handshake con el movil
-# Tiene que poder hacer el handshake con la psp
+#  Debe sincronizarlas a traves del 80% del espacio libre del dropbox o si estan enchufados directamente, en una primera version deberia hacerlo de archivo en archivo
+#  ####version2####Debe poder fraccionar las sincronizaciones (al llegar al tope de espacio llenable mete un archivo de finished)
+# Tiene que poder hacer el handshake con el movil(?)
+# Tiene que poder hacer el handshake con la psp(?)
 
 # Tiene que haber otro script que lo autoplanifique, a este y al de los backups, al de deploy music y al de videos (en VARIOS DISPOSITIVOS)
 # Tiene qe haber otro script que cada vez que corra un programa mire por si hay cambios en este y lo actualicee
-
+
