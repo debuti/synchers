@@ -162,6 +162,7 @@ def checkInput():
     else:
         p.print_help()
     #####/THIS SECTION IS A EXAMPLE#####
+#TODO: Al sincronizar cada archivo pasar el archivo gordo a un zip partido en cachitos y mergearlo en el otro lado, de esta manera no se manda el siguiente cachito hasta que la otra parte no haya quitado la suya de ahi. (que pasa si la otra esta apagada?)
 
 #TODO: Pasar todas las cosas genericas al script generico de python
 
