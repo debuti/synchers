@@ -1,619 +1,353 @@
-#!/usr/bin/env python
-###############################################################################################
+#!/usr/bin/env python3
+##########################################################################
 #  Author:
-_author = '<a href="mailto:debuti@gmail.com">Borja Garcia</a>'
+__author__ = '<a href="mailto:debuti@gmail.com">Borja Garcia</a>'
 # Program:
-_name = 'synchers'
+__program__ = 'synchers'
+# Package:
+__package__ = ''
 # Descrip:
-_description = '''This scripts sync all data between devices'''
+__description__ = '''Sync data between devices'''
 # Version:
-_version = '0.0.0'
-#    Date:
-_date = '2009-05-18:11:51:43'
-# License: This script doesn't require any license since it's not intended to be redistributed.
-#          In such case, unless stated otherwise, the purpose of the author is to follow GPLv3.
-# History: 0.0.0 (YYYY-MM-DD:hh:mm)
-#            -Initial release
-###############################################################################################
+__version__ = '0.0.0'
+#  Date:
+__date__ = '20210223'
+# License: GPLv3
+# History:
+#      0.0.0 (20210223)
+#      -Initial release
+##########################################################################
+
+# TODO: el fichero de destino tiene q llamarse igual pero con .tmp para evitar tener que poner ningun lock
+# TODO: ojo que mv tiene que mergear si hay nombres de directorio iguales en origen y destino
+# TODO: Ojo que tiene que ser estable incluso si lo apagan a la mitad
+# TODO: Ojo que tiene que funcionar en windows y android
+
+# metodos para shellutils
+# df (ruta) devuelve el numero de bytes que quedan en el disco donde
+# reside ruta
+
+
+# DOXYGEN para generar documentacion para cualquier lenguaje
+
+
+####### OTRAS COSAS ######################################################
+#  Debe sincronizarlas a traves del 80% del espacio libre del dropbox o si estan enchufados directamente, en una primera version deberia hacerlo de archivo en archivo
+#  ####version2####Debe poder fraccionar las sincronizaciones (al llegar al tope de espacio llenable mete un archivo de finished)
+# Tiene que haber otro script que le planifique un cron, a este y al de
+# los backups, al de deploy music y al de videos (en VARIOS DISPOSITIVOS)
+# y al de cargar el movil cuando esta conectado
+
 
 # Imports
 import logging
 import sys
-import doctest
-import datetime, time
-import os, glob
-import subprocess
-import optparse
-import inspect
-
-# User-libs imports
-LIB_PATH = '..' + os.path.sep + 'lib'
-for infile in glob.glob( os.path.join(LIB_PATH, '*.*') ):
-    sys.path.insert(0, infile)
-
-import shellutils
-
+import time
+import os
+import glob
+import argparse
+try:
+  import thepyutilities.shellutils as shellutils
+except BaseException:
+  print("Install thepyutilities (https://github.com/debuti/thepyutilities)")
+  sys.exit(-1)
 
 # Parameters n' Constants
-APP_PATH = os.getcwd() + os.path.sep + '.' + _name
-LOG_PATH = APP_PATH + os.path.sep + 'logs'
-LOG_FILENAME = LOG_PATH + os.path.sep + _name + '_' + time.strftime("%Y%m%d_%H%M%S") + '.log'
-
+DEFAULT_LOCATION_FILE = "stopover.location"
+QUEUES_RELATIVE_PATH = "Queues"
+OTHER_RELATIVE_PATH = "Other"
+ALLOWED_FOLDERS = ["Videogames",
+           "Other",
+           "Music",
+           "Videos",
+           "Torrents",
+           "Software",
+           "Photos",
+           "Documents",
+           "Data"]
 FREE_SPACE_PERCENTAGE_LIMIT = 20
+KIBI = 1024
+MEBI = 1024 * KIBI
+LOG_MODE = "File"
+LOG_LEVEL = logging.DEBUG
+LOG_MAX_BYTES = 1 * MEBI
+VOLUME_LIMIT_PER_FILE = 200 * MEBI
 
-# Global variables
-global now
-global logger
-global verbose
-now = time.strftime("%Y-%m-%d:%H:%M:%S")
-logger = ""
 
-#Names
-DESKTOP_NAME_C = shellutils.getSystemVariable("DESKTOP_NAME")
-NETTOP_NAME_C  = shellutils.getSystemVariable("NETTOP_NAME")
-MOBILE_NAME_C  = shellutils.getSystemVariable("MOBILE_NAME")
+realScriptPath = os.path.realpath(__file__)
+realScriptDirectory = os.path.dirname(realScriptPath)
+callingDirectory = os.getcwd()
+if os.path.isabs(__file__):
+  linkScriptPath = __file__
+else:
+  linkScriptPath = os.path.join(callingDirectory, __file__)
+linkScriptDirectory = os.path.dirname(linkScriptPath)
 
-#Paths
-DESKTOP_QUEUES_C = shellutils.getSystemVariable("DESKTOP_NAME")
+propertiesName = __program__ + ".properties"
+propertiesPath = os.path.join(realScriptDirectory, '..', propertiesName)
 
-# Error declaration
-error = { "" : "",
-          "" : "",
-          "" : "" }
+logFileName = __program__ + '_' + time.strftime("%Y%m%d%H%M%S") + '.log'
+logDirectory = os.path.join(realScriptDirectory, '..', 'logs')
+logPath = os.path.join(logDirectory, logFileName)
+loggerName = __package__ + "." + __program__
 
-# Usage function, logs, utils and check input
-def createWorkDir():
-    '''This function is for creating the working directory, if its not already
- 
-    --Description--
 
-    --Test--
-    >>> print createWorkDir()
-    '''
-    if not os.path.isdir(APP_PATH):
-        os.mkdir(APP_PATH)
-    if not os.path.isdir(LOG_PATH):
-        os.mkdir(LOG_PATH)
-    if not os.path.isfile(LOG_FILENAME):
-        f = open(LOG_FILENAME, "w")
-        f.close()
+def openLog(mode, desiredLevel):
+  '''This function is for initialize the logging job
+  '''
+  def openScreenLog(formatter, desiredLevel):
+    logging.basicConfig(level=desiredLevel, format=formatter)
 
-def openLog():
-    '''This function is for initialize the logging job
- 
-    --Description--
-
-    --Test--
-    >>> print openLog()
-    '''
- 
-    global logger
-
-    desiredLevel = logging.DEBUG
-    logger = logging.getLogger(_name)
+  def openScreenAndFileLog(fileName, formatter, desiredLevel):
+    logger = logging.getLogger('')
     logger.setLevel(desiredLevel)
     # create file handler which logs even debug messages
-    fh = logging.FileHandler(LOG_FILENAME)
+    fh = logging.FileHandler(fileName)
     fh.setLevel(desiredLevel)
-    # create console handler with a higher log level
-    ch = logging.StreamHandler()
-    ch.setLevel(desiredLevel)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    ch.setFormatter(formatter)
     fh.setFormatter(formatter)
-    # add the handlers to logger
-    logger.addHandler(ch)
+    # add the handler to logger
     logger.addHandler(fh)
 
+  def openScreenAndRotatingFileLog(
+      fileName,
+      formatter,
+      desiredLevel,
+      maxBytes):
+    logger = logging.getLogger('')
+    logger.setLevel(desiredLevel)
+    # create file handler which logs even debug messages
+    fh = logging.handlers.RotatingFileHandler(fileName, maxBytes)
+    fh.setLevel(desiredLevel)
+    fh.setFormatter(formatter)
+    # add the handler to logger
+    logger.addHandler(fh)
+
+  format = "%(asctime)-15s - %(levelname)-6s - %(message)s"
+  formatter = logging.Formatter(format)
+  # Clean up root logger
+  for handler in logging.getLogger('').handlers:
+    logging.getLogger('').removeHandler(handler)
+  openScreenLog(format, desiredLevel)
+
+  if mode == "File" or mode == "RollingFile":
+    if not os.path.isdir(logDirectory):
+      shellutils.mkdir(logDirectory)
+
+    if mode == "File":
+      openScreenAndFileLog(logPath, formatter, desiredLevel)
+
+    elif mode == "RollingFile":
+      openScreenAndRotatingFileLog(
+        logPath, formatter, desiredLevel, LOG_MAX_BYTES)
+
+
 def closeLog():
-    '''This function is for shutdown the logging job
+  '''This function is for shutdown the logging job
+  '''
+  logging.shutdown()
 
-    --Description--
-
-    --Test--
-    >>> print closeLog()
-    '''
- 
-    logging.shutdown()
 
 def checkInput():
-    '''This function is for treat the user command line parameters.
+  '''This function is for managing the user command line parameters
+  '''
+  p = argparse.ArgumentParser(description=__description__,
+                prog=__program__)
+  args = p.parse_args()
 
-    --Description--
 
-    --Test--
-    >>> print checkInput()
- 
-    '''
+def move(fromFullPath, toFullPath):
+  '''This procedure moves only the files in the subdirectories, merges the directories with the same name and performs a secure copy
+  '''
+  logging.debug("move: " + "Moving all the content from " +
+          fromFullPath + " to " + toFullPath)
+  # TODO: mv function should be the one in shell utils
+  # TODO: splitted copies between devices
 
-    #####THIS SECTION IS A EXAMPLE#####
-        #Global variable use declaration
+  # Identify unknownFiles: every not allowed dir and every file except
+  # location.default
+  unknownFiles = []
+  directories = []
+  for entity in shellutils.ls(fromFullPath, fullPath=True):
+    if os.path.isdir(entity):
+      if shellutils.basename(entity) not in ALLOWED_FOLDERS:
+        unknownFiles.append(entity)
+      else:
+        directories.append(entity)
+    elif shellutils.basename(entity) != DEFAULT_LOCATION_FILE:
+      unknownFiles.append(entity)
 
-    global verbose
-       
-    #Create instance of OptionParser Module, included in Standard Library
-    p = optparse.OptionParser(description=_description,
-                              prog=_name,
-                              version=_version,
-                              usage='''\
-%prog [options]''')
-    p.add_option('--ip','-i', action="store_true", help='gets current IP Address')
-    p.add_option('--usage', '-u', action="store_true", help='gets disk usage of homedir')
-    p.add_option('--verbose', '-v',
-                action = 'store_true',
-                help='prints verbosely',
-                default=False)
+  # Every unknown entity should be in the SOURCE "Other" folder, so move it
+  otherFullPath = os.path.join(fromFullPath, OTHER_RELATIVE_PATH)
+  for entity in unknownFiles:
+    if not shellutils.exists(otherFullPath):
+      shellutils.mkdir(otherFullPath)
+      directories.append(otherFullPath)
+    shellutils.mv(entity, otherFullPath)
 
-    #Option Handling passes correct parameter to runBash
-    options, arguments = p.parse_args()
+  # Make the real work here!!
+  for directory in directories:
+    dirFullPath = os.path.realpath(os.path.join(
+      toFullPath, shellutils.basename(directory), '.'))
+    if not shellutils.exists(dirFullPath):
+      shellutils.mkdir(dirFullPath)
+    for entity in shellutils.ls(directory, fullPath=True):
+      if shellutils.du(entity) < VOLUME_LIMIT_PER_FILE:
+        # Muevo cada objeto que esta dentro de las carpetas
+        # clasificadas de la queue origen a la misma carpeta de la
+        # queue destino
+        shellutils.mv(entity, dirFullPath)
 
-    if len(arguments) == 1:
-        p.print_help()
-        sys.exit(-1)
-    if options.verbose:
-        verbose=True
-    if options.ip:
-        value = runBash(IPADDR)
-        report(value,"IPADDR")
-    elif options.usage:
-        value = runBash(HOMEDIR_USAGE)
-        report(value, "HOMEDIR_USAGE")
-    else:
-        p.print_help()
-    #####/THIS SECTION IS A EXAMPLE#####
-#TODO: Al sincronizar cada archivo pasar el archivo gordo a un zip partido en cachitos y mergearlo en el otro lado, de esta manera no se manda el siguiente cachito hasta que la otra parte no haya quitado la suya de ahi. (que pasa si la otra esta apagada?)
 
-#TODO: Pasar todas las cosas genericas al script generico de python
+def hasLocationFile(queue):
+  '''This function returns if the selected queue has a default location and what it is
+  '''
+  for eachFile in shellutils.ls(os.path.join(shellutils.pwd(), queue)):
+    if eachFile == DEFAULT_LOCATION_FILE:
+      f = open(os.path.join(shellutils.pwd(), queue, eachFile))
+      try:
+        destiny = f.readline()
+        # Remove trailing line feed if any
+        destiny = destiny.split("\n")[0]
+      finally:
+        f.close()
+      logging.debug("hasLocationFile: " + "The queue " + queue +
+              " has location file, and it points to " + destiny)
+      return destiny
+  logging.debug("hasLocationFile: " + "The queue " +
+          queue + " has no location file")
+  return None
 
-def defaultLocation(): #TODO
-    '''This procedure returns the dropbox folder location
- 
-    '''
-    return "/media/dropbox"
 
-def myLocation(): #TODO
-    '''This procedure returns the local folder location
- 
-    '''
-    return "/media/notebook"
+def getConnectedSystems():
+  '''Returns a list with all the subsystems and its paths
+     The output is a list of dicts holding the name and the path for each subsystem
+  '''
+  result = []
+  if sys.platform.startswith("linux"):
+    for l in file('/proc/mounts'):
+      if l[0] == '/':
+        s = {'name': l.split()[1].split("/")[-1],
+             'path': l.split()[1],
+             'fs':   l.split()[2]}
+        if isSystemConnected(system=system):
+          result.append({'name': shellutils.basename(system), 'path': system})
+
+  elif sys.platform.startswith("win"):
+    import string
+    import ctypes
+
+    def get_drives():
+      drives = []
+      bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+      for letter in string.ascii_uppercase:
+        if bitmask & 1: drives.append(letter)
+        bitmask >>= 1
+      return drives
+
+    for system in get_drives():
+      spath = "{}:\\".format(system)
+      volumeNameBuffer = ctypes.create_unicode_buffer(1024)
+      fileSystemNameBuffer = ctypes.create_unicode_buffer(1024)
+      ctypes.windll.kernel32.GetVolumeInformationW(
+          ctypes.c_wchar_p(spath),
+          volumeNameBuffer,
+          ctypes.sizeof(volumeNameBuffer),
+          None,
+          None,
+          None,
+          fileSystemNameBuffer,
+          ctypes.sizeof(fileSystemNameBuffer)
+      )
+      s = {'name': volumeNameBuffer.value,
+           'path': spath,
+           'fs':   fileSystemNameBuffer.value}
+      if isSystemConnected(system=s):
+        result.append(s)
+
+  else:
+    raise Exception("Platform not supported")
+
+  return result
+
+def isSystemConnected(system):
+  '''Returns if a system is connected (it means that have a queues folder)
+  '''
+  return os.path.exists(os.path.join(system['path'], QUEUES_RELATIVE_PATH))
 
 def main():
-    '''This is the main procedure
- 
-    This procedure makes the following actions:
-     * Syncs the queues for the current system
-     * Syncs all the queues to the default location
-     *
-    '''
-    currentSystem = shellutils.getSystemName()
-    print currentSystem
-    defaultSyncLocation = defaultLocation() + os.path.sep + "_queues"
-    mySyncLocation = myLocation() + os.path.sep + "_queues"
+  '''Main function
+  '''
+  # For every system connected to this one (Only the connected ones! At
+  # least the one executing this)
+  for sourceSystem in getConnectedSystems():
+    logging.info("main: Analyzing {} queues".format(sourceSystem['name']))
 
-    #Sync queues
-    for system in shellutils.ls(mySyncLocation):
-        systemName = shellutils.basename(system)
-        if systemName != currentSystem:
-            #Copy this system stuff to its 
-            if shellutils.isDriveConnected(systemName):
-                 logging.info("DISCO CONECTADO")
+    # It is a valid system if it has queues
+    if shellutils.cd(os.path.join(sourceSystem['path'], QUEUES_RELATIVE_PATH)):
 
-            #Copy all outgoing stuff to the default location
+      # For every queue in that system
+      for queue in shellutils.ls(shellutils.pwd(), fullPath=True):
+
+        destinationSystem = {
+          'name': shellutils.basename(queue),
+          'sourceQueue': queue,
+          'destinationQueue': os.path.join(
+            drivesPath,
+            shellutils.basename(queue),
+            QUEUES_RELATIVE_PATH,
+            shellutils.basename(queue))}
+
+        # If the queue is the system that is being analyzed itself, skip
+        if destinationSystem['name'] == sourceSystem['name']: continue
+
+        logging.info("main:  Analyzing {} queue of system {}".format(destinationSystem['name'], sourceSystem['name']))
+
+        # Only if that system is connected: Direct transfer
+        if isSystemConnected(destinationSystem['name']):
+
+          logging.info("main:   {} to be copied to its final destiny {}".format(destinationSystem['sourceQueue'], destinationSystem['destinationQueue']))
+
+          # Move all the stuff
+          #move(destinationSystem['sourceQueue'],destinationSystem['destinationQueue'])
+
+          # Notify info
+          logging.info("main:   {} copied to its final destiny {}".format(destinationSystem['sourceQueue'], destinationSystem['destinationQueue']))
+
+        # If it is not connected: Derived transfer
+        else:
+            # Search for the forward info file
+            forward = hasLocationFile(destinationSystem['name'])
+
+            if forward is not None:
+              if isSystemConnected(forward):
+
+                middlemanQueue = os.path.join(
+                  drivesPath, forward, QUEUES_RELATIVE_PATH, destinationSystem['name'])
+
+                logging.info("main:   {} to be copied to the next step of the chain {}".format(destinationSystem['sourceQueue'], middlemanQueue)
+
+                # Move all the stuff
+                #move(destinationSystem['sourceQueue'], middlemanQueue)
+
+                # Notify info
+                logging.info("main:   {} copied to the next step of the chain {}".format(destinationSystem['sourceQueue'], middlemanQueue))
+
+              else:
+                # Notify info
+                logging.info("main:   {} default location ({}) is not connected".format(destinationSystem['sourceQueue'], forward))
+
             else:
-                for subdirectory in shellutils.ls(system):
-                    #If there is enough space to paste files
-                    if simulateLeftSpaceInPercentageWithAddition(defaultSyncLocation, shellutils.du(subdirectory)) > FREE_SPACE_PERCENTAGE_LIMIT:
-                        #Move all the stuff
-                       # shellutils.mv(subdirectory, defaultSyncLocation + os.path.sep + systemName)
-                        #Recreate all the default subdirectories
-                        #shellutils.mkdir(subdirectory)
 
-                        #Notify info
-                        logging.info(subdirectory + " copied")
+              # Notify info
+              logging.info(
+                "main:   {} default location file is not available".format(destinationSystem['sourceQueue']))
 
-                    else:
-                        #Notify error
-                        logging.error("Default location out of space")
-
-    exit() 
-
-    for system in shellutils.ls(defaultSyncLocation.getPath()):
-        systemName = shellutils.basename(system)
-        #Copy all ingoing stuff from the default location
-        if systemName == currentSystem:
-            for subdirectory in shellutils.ls(system):
-                #If there is enough space to paste files
-                if shellutils.du(subdirectory) < shellutils.df(mySyncLocation):
-                    #Move all the stuff
-                    shellutils.mv(subdirectory, mySyncLocation + os.path.sep + systemName)
-                    #Recreate all the default subdirectories
-                    shellutils.mkdir(subdirectory)
-                    #Notify info
-                else:
-                    #Notify error
-                    logging.error("Error")
-
-    #Sync device queues
-    for system in shellutils.ls(defaultSyncLocation):
-        #
-        logging.info("Hola")
-#TODO:
-# metodos para shellutils
-#  du, basename, dirname, ls tiene que devolver paths absolutos, df (ruta) devuelve el numero de bytes que quedan en el disco donde reside ruta
-#  ojo que mv tiene que mergear si hay nombres de directorio iguales en origen y destino
-# metodos para defaultLocation
-#  getPath, simulateLeftSpaceInPercentageWithAddition
+    logging.info("------------------------------")
 
 
 # Entry point
 if __name__ == '__main__':
-    #checkInput()
-    #createWorkDir()
-    #openLog()
-    main()
-    #closeLog()
-
-
-#OJO QUE SE PUEDE HACER IMPORT CON ZIPIMPORT DE UN MODULO QUE SE TENGA EN ZIP CREADO CON DISTUTILS
-#http://docs.python.org/library/zipimport.html
-#http://docs.python.org/distutils/introduction.html
-
-#DOXYGEN para generar documentacion para cualquier lenguaje
-	
-#Requisitos para este software_
-# Tiene que sincronizar las queues de los dispositivos
-#  Debe sincronizarlas teniendo en cuenta contenidos
-#  Debe sincronizarlas a traves del 80% del espacio libre del dropbox o si estan enchufados directamente, en una primera version deberia hacerlo de archivo en archivo
-#  ####version2####Debe poder fraccionar las sincronizaciones (al llegar al tope de espacio llenable mete un archivo de finished)
-# Tiene que poder hacer el handshake con el movil
-# Tiene que poder hacer el handshake con la psp
-
-# Tiene que haber otro script que lo autoplanifique, a este y al de los backups, al de deploy music y al de videos (en VARIOS DISPOSITIVOS)
-# Tiene qe haber otro script que cada vez que corra un programa mire por si hay cambios en este y lo actualicee
-
-
-
-
-
-###########EJEMPLOS#################
-
-
-
-# Helper functions
-#def syncDesktopQueues():
-  #  '''This is the procedure thats resolve the desktop's queues.
-#	This computer is constantly attached to Dropbox and sometimes the following devices are attached to it:
-#	 -HD_Data
-#	 -HD_Backup (To recover all backups)
-#	 -Mobile
-#	 -Camera
-#	 -Pendrive
-#	 -Psp
-#	'''
-    
-    #From Desktop to HD_Data
-  #  if (shellutils.mv(shellutils.ls(Desktop_HDData_Queues_Path), HDData_HDData_Queues_Path) != 0):
- #       print ("Error copying from Desktop to HD_Data queues")
-    
-    #From Desktop to HD_Backup
-    
-    #From Desktop
-    
-    #From Desktop to 
-
-   
-   #De mendigo a hd
-   # echo "----Florido -> HD----"
-   # echo "    ----Queues----"
-#    mv -v "$FLORIDO_PATH"/_queues/A_HD/* "$HD_PATH"/_queues/INCOMING/
- #   sleep 5
-
-   #De mendigo a florido
-  #  echo
-   # echo
-    #echo "----Florido -> Mendigo----"
-
-#    echo "    ----Queues----"
- #   mv -v "$FLORIDO_PATH"/_queues/A_mendigo/* "$HD_PATH"/_queues/A_mendigo/
-  #  sleep 5
-
-   #De quien sea a mendigo
-   # echo
-    #echo
-#    echo "----* -> Florido----"
-
- #   echo "    ----Queues----"
-  #  mv -v "$HD_PATH"/_queues/A_florido/* "$FLORIDO_PATH"/_queues/INCOMING/
-
-   # sync
-
-
-#def syncNettopQueues():
- #   '''This is the procedure thats resolve the nettop's queues.
-#	This computer is constantly attached to:
- #    -Dropbox
-#	 -Family exchange directory 
-#	and sometimes the following devices are attached to it:
-#	 -HD_Data
-#	 -HD_Backup (To recover all backups)
-#	'''
-
-#echo Pon el screen antes de hacer esto tio!
-#read ok
-
-#De mendigo a hd
-#echo "----Mendigo -> HD----"
-
- #videos transcodeados
-#echo "    ----Videos transcodeados----"
-#mkdir /media/sdc1/_queues/INCOMING/AVIS
-#mv -v /media/sdb1/_proceso/VIDEOS/AVIS/* /media/sdc1/_queues/INCOMING/AVIS/
-#sleep 5
-
-
- #incoming del mldonkey
-#echo "    ----Incoming----"
-#mkdir /media/sdc1/_queues/INCOMING/INCOMING_MLNET
-#mkdir /media/sdc1/_queues/INCOMING/INCOMING_MLNET/files
-#mkdir /media/sdc1/_queues/INCOMING/INCOMING_MLNET/directories
-#mv -v /media/sdb1/DOWNLOAD/INCOMING/files/* /media/sdc1/_queues/INCOMING/INCOMING_MLNET/files/
-#mv -v /media/sdb1/DOWNLOAD/INCOMING/directories/* /media/sdc1/_queues/INCOMING/INCOMING_MLNET/directories/
-#sleep 5
-
- #resto de cosas
-#echo "    ----Queues----"
-#mv -v /media/sdb1/_queues/A_HD/* /media/sdc1/_queues/INCOMING/
-#sleep 5
-
-#De mendigo a florido
-#echo
-#echo
-#echo "----Mendigo -> florido----"
- #musica
-#echo "    ----Musica tratada----"
-#mkdir /media/sdc1/_queues/A_florido/4.-TRANSFERIR
-#mv -v /media/sdb1/_proceso/MUSICA/4.-TRANSFERIR/* /media/sdc1/_queues/A_florido/4.-TRANSFERIR/
-#sleep 5
-
- #resto de cosas
-#echo "    ----Queues----"
-#mv -v /media/sdb1/_queues/A_florido/* /media/sdc1/_queues/A_florido/
-#sleep 5
-
-
-#De mama a HD
-#echo
-#echo
-#echo "----Mama -> HD----"
-#echo "    ----Queues----"
-#mv -v /media/emulatron/_queues/A_HD/* /media/sdc1/_queues/INCOMING/
-
-
-#De quien sea a mendigo
-#echo
-#echo
-#echo "----* -> Mendigo----"
-#echo "    ----Queues----"
-#mv -v /media/sdc1/_queues/A_mendigo/* /media/sdb1/_queues/INCOMING/
-
-
-
-#def syncMobile():
- #   '''This is the main procedure'''
- #   syncAndroid()
-
-#def syncAndroid():
-#    '''This is the main procedure'''
-
-##TODO: salvar program files tambien
-##TODO: aadir opcion para preguntar al inicio numero de albums q se quiere copiar
-
- #   NUM_ALBUMS=100 #TODO PONER AQUI EL 80% DEL DISCO LIBRE!!
-#
-#DATE=`date +%Y%m%d_%H%M%S`
-#TAG="pocketpc.$DATE.imported"
-#
-## Constants
-#DEFAULT_LOG_PATH="$PWD/syncWinMobile.$DATE.log"
-#
-#DEFAULT_POCKET_PC="/media/disk"
-#DEFAULT_PPC_OLDMEDIA_PATH="/My Documents/Old media"
-#DEFAULT_PPC_VIDEOS_PATH="/My Documents/My videos"
-#DEFAULT_PPC_PHOTOS_PATH="/My Documents/My pictures"
-#DEFAULT_PPC_MUSIC_PATH="/My Documents/My music"
-#DEFAULT_PPC_MOVIES_PATH="/My Documents/My movies"
-#DEFAULT_PPC_BACKUPS_PATH="/My Documents/backups"
-#DEFAULT_PPC_PROGRAMS_PATH="/My Documents/Other/Installers"
-#DEFAULT_PPC_DOCUMENTS_PATH="/My Documents/*"
-#DEFAULT_PPC_PERSONAL_PATH="/My Documents/Personal"
-#DEFAULT_PPC_SAVEGAMES_PATH="/My Documents/Savegames"
-#
-#DEFAULT_LINUX="/media/datos"
-#DEFAULT_LINUX_VIDEOS_PATH="/Data/Photos/Inbox/$TAG"
-#DEFAULT_LINUX_PHOTOS_PATH="/Data/Photos/Inbox/$TAG"
-#DEFAULT_LINUX_MUSIC_PATH="/Data/Music/Albums"
-#DEFAULT_LINUX_MOVIES_PATH="/_queues/winMobile/to_winMobile/Movies"
-#DEFAULT_LINUX_BACKUPS_PATH="/Data/Private/Mobile/p3300/backups"
-#DEFAULT_LINUX_PROGRAMS_PATH="/Software/windowsMe"
-#DEFAULT_LINUX_PASSWD_PATH="/media/Dropbox/Data/Private/Info/Passwd/passwd.kdb"
-#DEFAULT_LINUX_STUFF_PATH="/Data/Private/Mobile/p3300/data"
-#DEFAULT_LINUX_CONTACTS_PATH="/Data/Private/Info/Contacts/contacts.xls"
-#
-## Global variables
-#log=$DEFAULT_LOG_PATH
-#
-#pocketPC=$DEFAULT_POCKET_PC
-#ppc_oldmedia_path="$pocketPC""$DEFAULT_PPC_OLDMEDIA_PATH"
-#ppc_videos_path="$pocketPC""$DEFAULT_PPC_VIDEOS_PATH"
-#ppc_photos_path="$pocketPC""$DEFAULT_PPC_PHOTOS_PATH"
-#ppc_music_path="$pocketPC""$DEFAULT_PPC_MUSIC_PATH"
-#ppc_movies_path="$pocketPC""$DEFAULT_PPC_MOVIES_PATH"
-#ppc_backups_path="$pocketPC""$DEFAULT_PPC_BACKUPS_PATH"
-#ppc_programs_path="$pocketPC""$DEFAULT_PPC_PROGRAMS_PATH"
-#ppc_documents_path="$pocketPC""$DEFAULT_PPC_DOCUMENTS_PATH"
-#ppc_personal_path="$pocketPC""$DEFAULT_PPC_PERSONAL_PATH"
-#ppc_savegames_path="$pocketPC""$DEFAULT_PPC_SAVEGAMES_PATH"
-#
-#linux=$DEFAULT_LINUX
-#linux_videos_path="$linux""$DEFAULT_LINUX_VIDEOS_PATH"
-#linux_photos_path="$linux""$DEFAULT_LINUX_PHOTOS_PATH"
-#linux_music_path="$linux""$DEFAULT_LINUX_MUSIC_PATH"
-#linux_movies_path="$linux""$DEFAULT_LINUX_MOVIES_PATH"
-#linux_backups_path="$linux""$DEFAULT_LINUX_BACKUPS_PATH"
-#linux_programs_path="$linux""$DEFAULT_LINUX_PROGRAMS_PATH"
-#linux_passwd_path="$DEFAULT_LINUX_PASSWD_PATH"
-#linux_stuff_path="$linux""$DEFAULT_LINUX_STUFF_PATH"
-#linux_contacts_path="$linux""$DEFAULT_LINUX_CONTACTS_PATH"
-
-#
-#  function dirEmpty {
-#    if [ -e "$1" ]; then
-#      dir="$1"
-#    else
-#      return -1
-#    fi
-#
-#    cd "$dir"
-#    counter=0
-#    for i in *; do
-#      let counter=$counter+1
-#    done
-#
-#    cd - >> /dev/null > /dev/null
-#
-#    if [ $counter -eq 1 ]; then
-#      if [ "$i" = "*" ]; then
-#        echo 1
-#        return 1
-#      else
-#        echo 0
-#        return 0
-#      fi
-#    else
-#      echo 0
-#      return 0
-#    fi
-#  }
-#
-#
-#    logging.info("Using $pocketPC as mobile phone directory"
-#    #I set up all vars
-#ppc_oldmedia_path="$pocketPC""$DEFAULT_PPC_OLDMEDIA_PATH"
-#ppc_videos_path="$pocketPC""$DEFAULT_PPC_VIDEOS_PATH"
-#ppc_photos_path="$pocketPC""$DEFAULT_PPC_PHOTOS_PATH"
-#ppc_music_path="$pocketPC""$DEFAULT_PPC_MUSIC_PATH"
-#ppc_movies_path="$pocketPC""$DEFAULT_PPC_MOVIES_PATH"
-#ppc_backups_path="$pocketPC""$DEFAULT_PPC_BACKUPS_PATH"
-#ppc_programs_path="$pocketPC""$DEFAULT_PPC_PROGRAMS_PATH"
-#ppc_documents_path="$pocketPC""$DEFAULT_PPC_DOCUMENTS_PATH"
-#ppc_personal_path="$pocketPC""$DEFAULT_PPC_PERSONAL_PATH"
-#ppc_savegames_path="$pocketPC""$DEFAULT_PPC_SAVEGAMES_PATH"
-#  }
-
- #   def photosNvideos():
-
-#        logging.info("Saving photos and videos with the handset")
-
- #       if not os.path.isdir(linux_videos_path):
-#            if (os.mkdir(linux_videos_path) != 0):
- #               logging.error("Unable to make dir " + linux_videos_path)
-#
- #       logging.info(" Saving videos")
-#
- #       shellutils.cp("$ppc_videos_path"/*,
- #                     "$ppc_oldmedia_path") #TODO:Copia una lista de archivos al destino (hacer una version recurrente)
- #       shellutils.mv("$ppc_videos_path"/*,
- #                     "$linux_videos_path") #TODO:Mueve una lista al destino!
-#
-#
- #       if not os.path.isdir(linux_photos_path):
- #           if (os.mkdir(linux_photos_path) != 0):
- #               logging.error("Unable to make dir " + linux_photos_path)
-#
- #       logging.info("Syncing photos")
-#
-#        shellutils.cp("$ppc_photos_path"/*,
-#                      "$ppc_oldmedia_path") #TODO:Copia una lista de archivos al destino (hacer una version recurrente)
- #       shellutils.mv("$ppc_photos_path"/*,
- #                     "$linux_photos_path") #TODO:Mueve una lista al destino!
-#
-#
-#        if shellutils.isDirEmpty(linux_photos_path):   #TODO:if os.listdir(path) == []:    print "yes" else:    print "no"
-#            shellutils.rm_rf(linux_photos_path) #TODO: Espera una lista!
-#            logging.debug("No photos or videos so deleting " +linux_photos_path)
-#
-
-#        logging.info("Saving photos and videos with the handset done")
-
-
-
-#    def music():
-#TODO: Poner un ||exit detras del fillMP3 cuando arregle el fillmp3 para que saque mensajes si rula mal :S
-
-#        if shellutils.existsExecutable("fillMP3player.sh"): #TODO:es ver si un which devuelve algo o no :S
-#           logging.error("fillMP3player.sh utility not found, please append it to the path to complete music copy process")
-#
-#        else
-#           logging.info("Transfering music to your mobile")#
-#           shellutils.runBash("fillMP3player.sh "+linux_music_path+" "+NUM_ALBUMS+" "+ppc_music_path+" "+S)
-#           logging.info("You have new music for free, fuck sgae!")
-#           logging.info("Transfering music to your mobile done")
-#
-#
-#
-#    def movies():
-#        logging.info("Copying the movies to your device")
-#        shellutils.rm_rf(ppc_movies_path"/*)
-#        shellutils.mv(linux_movies_path"/*,
-#                      ppc_movies_path)
-#        logging.info("Copying the movies to your device done")
-
-#
-#  function backups {
-#    logging.info("Backupin the backup"
-#    cp -fuv "$ppc_backups_path"/* "$linux_backups_path"/. 2>> $log >> $log || (logging.error("Unable to backup the backups" && exit -1)
-#    logging.info("Done backupin backups"
-#  }
-#
-#  function programs {
-#    logging.info("Backupin the programs"
-#    cp -furv "$ppc_programs_path"/* "$linux_programs_path"/. 2>> $log >> $log || (logging.error("Unable to backup the programs" && exit -1)
-#    logging.info("Done backupin programs"
-#  }
-#
-#  function passwords {
-#    logging.info("Backupin the passwords"
-#    cp -fv "$linux_passwd_path" "$ppc_personal_path" 2>> $log >> $log || (logging.error("Unable to copy the passwd file" && exit -1)
-#    logging.info("Done backupin passwords"
-#  }
-#
-#  function contacts {
-##TODO: Recode this part when my contacts software is rockin' hard
-#    logging.info("Importing contacts"
-#    cp -fv "$linux_contacts_path" "$ppc_personal_path" 2>> $log >> $log || (logging.error("Unable to copy the contacts data" && exit -1)
-#    logging.info("Done importin contacts"
-#  }
-#
-#  function stuff {
-##TODO: mydownloads y personal y el root de my documents, salvar al directorio /BORJA/DATOS/MOVIL/p3300/datos
-#    logging.info("Backuping the other data on the phone"
-#    cp -fv "$ppc_documents_path" "$linux_stuff_path" 2>> $log >> $log || (logging.error("Unable to copy the documents data" && exit -1)
-#    cp -fvR "$ppc_personal_path" "$linux_stuff_path" 2>> $log >> $log || (logging.error("Unable to copy the personal data" && exit -1)
-#    cp -fvR "$ppc_savegames_path" "$linux_stuff_path" 2>> $log >> $log || (logging.error("Unable to copy the savegames data" && exit -1)
-#    logging.info("Done backupin common data"
-#  }
-#
-
-# Main android sync function
-#TODO: Insert command line options to select which of these execute, default all
-#    photosNvideos()      #DEBUG: ; read
-#    music()              #DEBUG: ; read
-#    movies()             #DEBUG: ; read
-#    backups()            #DEBUG: ; read
-#    programs()           #DEBUG: ; read
-#    passwords()          #DEBUG: ; read
-#    contacts()           #DEBUG: ; read
-#    stuff()              #DEBUG: ; read
-#TODO Sincronize here the buffers
-
+  openLog(LOG_MODE, LOG_LEVEL)
+  checkInput()
+  main()
+  closeLog()
